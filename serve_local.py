@@ -5,8 +5,17 @@ from pathlib import Path
 from urllib.parse import urlsplit, unquote, parse_qs
 
 ROOT = Path(__file__).resolve().parent / 'mirror' / 'playgta5.com'
+USERDATA_BACKUP = Path(__file__).resolve().parent / 'save-backups' / 'live'
+USERDATA_NAME = re.compile(r'SGTA5\d{4}(\.bak)?|pc_settings\.bin')  # basenames only: never a client-supplied path
 mimetypes.add_type('application/wasm', '.wasm')
 mimetypes.add_type('text/javascript', '.js')
+# Harmless engine warnings repeated thousands of times per session; crash reports are never filtered.
+LOG_NOISE = re.compile(r"<ClothInstanc> \[Graphics\] grcBuffer|\[Parser\] (Array \S+ is a fixed size|Couldn't set the array size)|^0x[0-9a-f]+ - nosymbols\+0x[0-9a-f]+$")
+
+def filter_log(text):
+    if text.startswith('[page] CRASH'):
+        return text
+    return '\n'.join(line for line in text.split('\n') if not LOG_NOISE.search(line))
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -18,6 +27,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
         self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
         self.send_header('Accept-Ranges', 'bytes')
+        if not self.path.startswith('/data/'):
+            # Revalidate code on every load (304 when unchanged); without this Chrome keeps running an edited script's old copy for hours.
+            self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
     def send_head(self):
@@ -61,8 +73,34 @@ class Handler(SimpleHTTPRequestHandler):
             outputfile.write(chunk)
             remaining -= len(chunk)
 
+    def log_request(self, code='-', size='-'):
+        pass  # no access lines; errors still print via log_error
+
     def do_POST(self):
         url = urlsplit(self.path)
+        if url.path == '/log':
+            # ?log=1 pages post engine, GPU worker and page log lines here.
+            length = int(self.headers.get('Content-Length', '0'))
+            text = filter_log(self.rfile.read(length).decode('utf-8', 'replace'))
+            if text:
+                print(text, flush=True)
+            self.send_response(204)
+            self.end_headers()
+            return
+        if url.path == '/userdata':
+            # io_worker.js posts each settled savegame/settings file here as a copy outside the browser's IndexedDB.
+            query = parse_qs(url.query)
+            name, mtime = query.get('name', [''])[0], query.get('mtime', [''])[0]
+            length = int(self.headers.get('Content-Length', '0'))
+            if not USERDATA_NAME.fullmatch(name) or not mtime.isdigit() or not 0 < length <= 4 * 1024 * 1024:
+                self.send_error(400)
+                return
+            USERDATA_BACKUP.mkdir(parents=True, exist_ok=True)
+            (USERDATA_BACKUP / ('%s.%s' % (name, mtime))).write_bytes(self.rfile.read(length))
+            print('[server] userdata backed up: save-backups/live/%s.%s (%d bytes)' % (name, mtime, length), flush=True)
+            self.send_response(204)
+            self.end_headers()
+            return
         if url.path != '/data/batch':
             self.send_error(404)
             return

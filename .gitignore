@@ -1,2 +1,7 @@
 mirror/
 media/
+last-session.log
+previous-session.log
+save-backups/
+__pycache__/
+._*
