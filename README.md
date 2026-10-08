@@ -25,7 +25,7 @@ The data set has no `update.rpf`, so the MP/NG menu assets (`MPShopSale.ytd`, th
 The streaming resource heap grew by 256 MB every time it filled up and never evicted anything. In a long session it hit the 3 GB WebAssembly memory limit and the game died while loading a map piece. The patch caps that heap at 1 GB (4 x 256 MB), so the game unloads the least used models instead of growing. A side effect can be a little texture pop-in. Change `GROW_HEAP_LIMIT` in `patch_shop_menus.py` if you want a different cap.
 
 ### Money hotkey
-Press **`-`** (the key right of `0`) in game: the current character gets **+$999,999**. Once per press. The game never sees that key.
+Press **`-`** (the key right of `0`) in game: the current character gets **+$999,999**. Once per press, in both Story Mode and Sandbox Mode. The game never sees that key.
 
 ## How to apply
 
