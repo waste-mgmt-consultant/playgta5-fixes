@@ -1,54 +1,68 @@
-# playgta5 Source Code
-This code is grabbed from playgta5.com before it got took down. You can run this locally or make it public hehe.
+# playgta5 fixes
 
-# Credits
-Shoutout to Sebas Furbastian on Telegram for scrapping this code. Idk what is his GitHub but here's the Telegram and X.
+The playgta5.com web client, scraped before the site went down, plus fixes for the problems that made it hard to actually play:
 
-Telegram: @SebasKitten
+- **Saves disappear** after a reload.
+- **Shop menus never open** (Los Santos Customs, clothes, barbers, ...).
+- **The game crashes after a long session** ("Invalid fixup ... is neither virtual nor physical").
+- Bonus: a **money hotkey**.
 
-X: @Sebas_Kitten
+No Rockstar files are in this repo. You need your own copy of the `mirror` folder (about 19.7 GB).
 
-# Link
-Telegram: https://t.me/playgta5regen
+## What was fixed
 
+### Saves get lost
+Saving looked fine, but after a reload the save was gone. The loader restored saves from IndexedDB and started the engine inside the read callback. The engine never returns, so that read transaction never finished and kept its lock. Every later save write waited behind it forever, without an error.
 
-# Disclaimer
-I don't host the `.\mirror` folder since it has copyrighted content from Rockstar Games. Please find the files by yourself.
+- `loader.js`: the engine starts only after the restore transaction has completed.
+- `io_worker.js`: a write that hangs times out and is logged instead of waiting silently. Every save is also sent to the local server.
+- `serve_local.py`: keeps a copy of every save on disk in `save-backups/live/` (`SGTA500xx.<time>`). If the browser ever loses your saves, they are there. The server also tells the browser not to cache the scripts, so fixes like these take effect without clearing the cache.
 
-No copyrighted file is included in this repo. If Rockstar Games or any affiliated group think this repo has copyright infringement things, email me at shadany7824@gmail.com for me to took it down.
+### Shop menus never open
+The data set has no `update.rpf`, so the MP/NG menu assets (`MPShopSale.ytd`, the `COLOUR_SWITCHER` movies) are missing. The shop scripts wait for them forever. `patch_shop_menus.py` patches `game.wasm` so a missing texture dictionary or scaleform movie reports "loaded" instead of blocking the menu.
 
-And don't email me for asking the mirror folder. I will not reply to the email.
+### Crash after playing for a while
+The streaming resource heap grew by 256 MB every time it filled up and never evicted anything. In a long session it hit the 3 GB WebAssembly memory limit and the game died while loading a map piece. The patch caps that heap at 1 GB (4 x 256 MB), so the game unloads the least used models instead of growing. A side effect can be a little texture pop-in. Change `GROW_HEAP_LIMIT` in `patch_shop_menus.py` if you want a different cap.
 
-# How to use
-1. Download the ZIP or just `git clone` it. It should have all this file and folders.
-<p align="center">
-  <img src="media/Screenshot 2026-10-07 172103.png" alt="playgta5 SC">
-</p>
+### Money hotkey
+Press **`-`** (the key right of `0`) in game: the current character gets **+$999,999**. Once per press. The game never sees that key.
 
-2. Paste your `.mirror` folder at your desired path. (It should have 19.7 GB of file size. Check the pic below.)
-<p align="center">
-  <img src="media/Screenshot 2026-10-07 172216.png" alt="Folder Properties">
-</p>
-<p align="center">
-  <img src="media/Screenshot 2026-10-07 172718.png" alt="Folder Properties">
-</p>
-<p align="center">
-  <img src="media/Screenshot 2026-10-07 172758.png" alt="Folder Properties">
-</p>
+## How to apply
 
-3. Run the `Launch-Local.cmd` and it will automatically open the URL at `http://localhost:8000/`.
+1. **Get the files.** `git clone` this repo or download the ZIP.
 
-4. Voila!
+2. **Add your `mirror` folder** to the repo folder. The repo already contains three fixed files inside `mirror/` (`index.html`, `b/8b0b5899ed/io_worker.js`, `b/8b0b5899ed/loader.js`). Your mirror must not overwrite them:
+   - Copying with Explorer/Finder: when it asks about existing files, choose **skip**.
+   - Or copy everything and then run `git checkout -- mirror` to put the fixed files back.
 
-# Requirement
-Scripts require standard-library Python 3.11 or newer. The bundled Python path
-in the commands above is specific to the original PC; the portable ZIP instead
-provides `runtime\python.exe` and the double-click launcher.
-Completed files and `.part` transfers are retained for resumption. Final checks
-cover inventory sizes, runtime hash samples, WASM signature, HTTP isolation,
-range reads and both batch formats. Actual gameplay requires separate browser
-validation. A public client snapshot is not the site's original development repository.
+   <p align="center">
+     <img src="media/Screenshot 2026-10-07 172216.png" alt="mirror folder size">
+   </p>
 
-To resume with the current uncapped settings, append `--workers 32 --rate-mib 0`
-to the downloader command. Content lengths from HTTP take precedence over the
-source manifest when it is stale; mismatches are recorded explicitly.
+3. **Patch `game.wasm`** from the repo folder:
+   - Windows: `runtime\python.exe patch_shop_menus.py`
+   - macOS / Linux: `python3 patch_shop_menus.py`
+
+   It should print `game.wasm patched: 63201802 -> 63202084 bytes, sha256 3ea63e8d...`. The first run keeps the untouched file as `game.wasm.orig`. Running it again is safe. It refuses to touch a `game.wasm` that is not the expected build, so nothing breaks if your mirror is different.
+
+   To undo: copy `game.wasm.orig` over `game.wasm` (in `mirror/playgta5.com/b/8b0b5899ed/`).
+
+4. **Start the game:**
+   - Windows: `Launch-Local.cmd`
+   - macOS: `Launch-Local.command` (it refuses to start a second server if one is already running)
+
+   Then open `http://localhost:8000/`. The first time after updating, do one hard reload (Ctrl+Shift+R / Cmd+Shift+R).
+
+5. **Check that saves work** (optional). Save in game and wait a few seconds. A file should appear in `save-backups/live/`.
+
+## Title screen
+- **Enter**: Story Mode.
+- **Space**, then **5**: Sandbox Mode on the GTA V map. Space alone only opens the map choice; the game waits there until you press 5.
+- **Space**, then **6**: Sandbox Mode on the "GTA VI map" (`env_test`), if your mirror has it.
+- **`=`** toggles the FPS counter.
+
+## Credits
+The original client and site are by the playgta5.com authors. The scrape and the first repo are by Sebas Furbastian (Telegram @SebasKitten, X @Sebas_Kitten). Community: https://t.me/playgta5regen
+
+## Disclaimer
+This repo has only scripts and the web client code. It does not include `game.wasm`, game data or any other Rockstar Games file, and it will not. Don't ask for the mirror folder.
