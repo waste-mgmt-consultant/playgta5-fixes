@@ -9,6 +9,9 @@ The playgta5.com web client, scraped before the site went down, plus fixes for t
 
 No Rockstar files are in this repo. You need your own copy of the `mirror` folder (about 19.7 GB).
 
+> **Linux:** see **[RUN-LINUX.md](RUN-LINUX.md)** for a complete step-by-step guide.
+> Quick start: `./patch.sh` then `./Launch-Local.sh`.
+
 ## What was fixed
 
 ### Saves get lost

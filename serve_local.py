@@ -1,8 +1,33 @@
 """Local mirror server: isolation headers, byte ranges, and engine batch I/O."""
-import argparse, gzip, io, json, mimetypes, re, shutil, webbrowser
+import argparse, gzip, io, json, mimetypes, re, shutil, socket, webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, unquote, parse_qs
+
+def lan_ipv4_addresses():
+    """Best-effort list of non-loopback IPv4 addresses, for LAN launch messages."""
+    addrs = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith('127.'):
+                addrs.add(ip)
+    except OSError:
+        pass
+    try:
+        # Query the routing table without sending packets.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(('8.8.8.8', 80))
+            ip = probe.getsockname()[0]
+            if not ip.startswith('127.'):
+                addrs.add(ip)
+        finally:
+            probe.close()
+    except OSError:
+        pass
+    return sorted(addrs)
+
 
 ROOT = Path(__file__).resolve().parent / 'mirror' / 'playgta5.com'
 USERDATA_BACKUP = Path(__file__).resolve().parent / 'save-backups' / 'live'
@@ -76,6 +101,16 @@ class Handler(SimpleHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         pass  # no access lines; errors still print via log_error
 
+    def send_error(self, code, message=None, explain=None):
+        # The silenced access log above hides which URL failed; a missing
+        # game file 404s forever while the engine retries it, so always
+        # print the path (this is how the 66%-stall suspects get caught).
+        try:
+            print('HTTP %s for %s' % (code, urlsplit(self.path).path), flush=True)
+        except Exception:
+            pass
+        super().send_error(code, message, explain)
+
     def do_POST(self):
         url = urlsplit(self.path)
         if url.path == '/log':
@@ -145,11 +180,18 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
     args.add_argument('--port', type=int, default=8000)
+    args.add_argument('--host', default='127.0.0.1',
+                      help='bind address; use 0.0.0.0 to also serve other machines on your LAN (default: localhost only)')
     args.add_argument('--open', action='store_true', help='open the default browser after binding')
     options = args.parse_args()
-    server = ThreadingHTTPServer(('127.0.0.1', options.port), Handler)
+    server = ThreadingHTTPServer((options.host, options.port), Handler)
     address = 'http://localhost:%d/' % server.server_port
     print('Local mirror: %s (Ctrl+C to stop)' % address, flush=True)
+    if options.host not in ('127.0.0.1', 'localhost'):
+        # Best-effort list of LAN URLs for clients on the same network.
+        for ip in lan_ipv4_addresses():
+            print('  on your LAN: http://%s:%d/' % (ip, server.server_port), flush=True)
+        print('  (clients must enable WebGPU for an insecure origin; see RUN-LINUX.md)', flush=True)
     if options.open:
         webbrowser.open(address)
     try:

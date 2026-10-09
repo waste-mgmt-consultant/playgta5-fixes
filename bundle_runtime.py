@@ -1,6 +1,16 @@
-"""Build a portable standard-library Python runtime from the local Codex bundle."""
+"""Build a portable standard-library Python runtime from the local Codex bundle.
+
+Windows only: it copies python.exe, its DLLs and the standard library out of the
+Windows Python that runs it. On Linux/macOS the system Python is used instead,
+so this script refuses to run there (Launch-Local.sh / playgta5.sh call
+`python3 serve_local.py` directly).
+"""
 import hashlib, json, shutil, sys, zipfile
 from pathlib import Path
+
+if sys.platform != 'win32':
+    sys.exit('bundle_runtime.py is Windows-only: on Linux/macOS just use the system '
+             'python3 (./playgta5.sh start). Nothing to bundle.')
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = Path(sys.executable).parent
