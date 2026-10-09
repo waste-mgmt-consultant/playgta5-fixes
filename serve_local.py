@@ -101,6 +101,16 @@ class Handler(SimpleHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         pass  # no access lines; errors still print via log_error
 
+    def send_error(self, code, message=None, explain=None):
+        # The silenced access log above hides which URL failed; a missing
+        # game file 404s forever while the engine retries it, so always
+        # print the path (this is how the 66%-stall suspects get caught).
+        try:
+            print('HTTP %s for %s' % (code, urlsplit(self.path).path), flush=True)
+        except Exception:
+            pass
+        super().send_error(code, message, explain)
+
     def do_POST(self):
         url = urlsplit(self.path)
         if url.path == '/log':
