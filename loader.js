@@ -20,7 +20,7 @@ self.onmessage = (ev) => {
 	if (m.gpuLimits) gq.set('limits', m.gpuLimits);		// ?limits=name:value,...: a smaller device (diagnosis of weaker GPUs)
 	const B = m.base || '';		// the page's URL prefix for everything it loads (index.html BASE): /b/<build> on the PHP host, empty otherwise
 	const gpu = new Worker(B + '/wgpu_worker.js' + (gq.toString() ? '?' + gq : ''));
-	const io = new Worker(B + '/io_worker.js');
+	const io = new Worker(B + '/io_worker.js?v=2');		// ?v: see index.html
 	io.postMessage({ init: true, base: self.location.origin + '/data/', noStore: !!m.noStore, record: !!m.record, trace: !!m.trace, log: !!m.remoteLog, noHints: !!m.noHints, bootset: m.lowMemory ? 'bootset_low.json' : 'bootset.json' });		// starts the prefetch of the boot read set at once		// HTTP reads of all engine threads (platform/file/httpfs_wasm.cpp); same reason to create it up front
 	let loaded = 0;
 	io.onmessage = (e) => { if (e.data.loaded && ++loaded === 2) start(); };
@@ -117,11 +117,15 @@ self.onmessage = (ev) => {
 					r.onsuccess = () => {
 						let n = 0, bytes = 0;
 						try {
-							const req = r.result.transaction('files', 'readonly').objectStore('files').openCursor();
-							req.onerror = () => finish('read failed: ' + req.error);
+							// finish() can start main(), which never returns to this worker's event loop. Called from inside a request callback, the
+							// transaction never commits and its lock blocks every later write by io_worker.js. So finish only once it has completed.
+							const db = r.result, t = db.transaction('files', 'readonly');
+							t.oncomplete = () => { db.close(); finish('restored ' + n + ' file(s), ' + bytes + ' bytes'); };
+							t.onabort = () => { db.close(); finish('read aborted: ' + t.error); };
+							const req = t.objectStore('files').openCursor();		// a failed request aborts the transaction: onabort reports it
 							req.onsuccess = () => {
 								const c = req.result;
-								if (!c) { finish('restored ' + n + ' file(s), ' + bytes + ' bytes'); return; }
+								if (!c) return;
 								const path = String(c.key);
 								try {
 									if (path.startsWith('/userdata/') && c.value && c.value.data) {

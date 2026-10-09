@@ -612,27 +612,54 @@ let userdataDb = null;
 const openUserdata = () => userdataDb || (userdataDb = new Promise((resolve, reject) => {
 	const r = indexedDB.open('gta5-userdata', 1);
 	r.onupgradeneeded = () => r.result.createObjectStore('files');
-	r.onsuccess = () => resolve(r.result);
+	r.onsuccess = () => {
+		const db = r.result;
+		db.onversionchange = () => { db.close(); userdataDb = null; };
+		db.onclose = () => { userdataDb = null; };		// closed by the browser: the next write reopens
+		resolve(db);
+	};
 	r.onerror = () => { userdataDb = null; reject(r.error); };
+	r.onblocked = () => fetch('/log', { method: 'POST', body: '[io] userdata: IndexedDB open blocked by another connection' }).catch(() => {});
 }));
+const USERDATA_TIMEOUT_MS = 10000;		// a hung open or transaction becomes a logged failure instead of silence
 async function userdataWrite(path, record) {
+	let timer = 0;
 	try {
-		const db = await openUserdata();
-		await new Promise((resolve, reject) => {
-			const t = db.transaction('files', 'readwrite');
-			if (record) t.objectStore('files').put(record, path); else t.objectStore('files').delete(path);
-			t.oncomplete = resolve;
-			t.onerror = t.onabort = () => reject(t.error);
-		});
+		await Promise.race([
+			(async () => {
+				const db = await openUserdata();
+				await new Promise((resolve, reject) => {
+					const t = db.transaction('files', 'readwrite');
+					if (record) t.objectStore('files').put(record, path); else t.objectStore('files').delete(path);
+					t.oncomplete = resolve;
+					t.onerror = t.onabort = () => reject(t.error);
+				});
+			})(),
+			new Promise((_, reject) => { timer = setTimeout(() => { userdataDb = null; reject(new Error('timed out after ' + USERDATA_TIMEOUT_MS + ' ms')); }, USERDATA_TIMEOUT_MS); }),
+		]);
 		log('[io] userdata ' + (record ? 'stored ' + path + ' (' + record.data.length + ' bytes)' : 'deleted ' + path));
 	} catch (e) {
 		fetch('/log', { method: 'POST', body: '[io] userdata ' + path + ' NOT stored (the save will be lost when the tab closes): ' + e }).catch(() => {});		// whatever ?log=1 says: a lost save is worth a line
+	} finally {
+		clearTimeout(timer);
 	}
+}
+// A second copy outside the browser: serve_local.py keeps every version under save-backups/live/. Independent of IndexedDB, so one failing does not lose the save.
+function userdataBackup(path, record) {
+	fetch('/userdata?name=' + encodeURIComponent(path.slice(path.lastIndexOf('/') + 1)) + '&mtime=' + Math.round(record.mtime), { method: 'POST', body: record.data })
+		.then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); })
+		.catch((e) => fetch('/log', { method: 'POST', body: '[io] userdata ' + path + ' disk backup failed: ' + e }).catch(() => {}));
 }
 
 self.onmessage = async (ev) => {
 	const m = ev.data;
-	if (m.userdata) { userdataWrite(m.userdata.path, { data: m.userdata.data, mtime: m.userdata.mtime }); return; }
+	if (m.userdata) {
+		const record = { data: m.userdata.data, mtime: m.userdata.mtime };
+		log('[io] userdata received ' + m.userdata.path + ' (' + record.data.length + ' bytes)');
+		userdataBackup(m.userdata.path, record);
+		userdataWrite(m.userdata.path, record);
+		return;
+	}
 	if (m.userdataDelete) { userdataWrite(m.userdataDelete, null); return; }
 	if (m.init) { ready = init(m); return; }		// sent by loader.js as soon as the page starts
 	if (!m.memory) return;

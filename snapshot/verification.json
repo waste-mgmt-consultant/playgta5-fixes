@@ -4,6 +4,28 @@
   "data_manifest_files": 5814,
   "missing": [],
   "wrong_size": [],
+  "fixed_files": [
+    {
+      "path": "/b/8b0b5899ed/game.wasm",
+      "manifest_bytes": 63201802,
+      "fixed_bytes": 63202084
+    },
+    {
+      "path": "/index.html",
+      "manifest_bytes": 45087,
+      "fixed_bytes": 45590
+    },
+    {
+      "path": "/b/8b0b5899ed/loader.js",
+      "manifest_bytes": 9201,
+      "fixed_bytes": 9638
+    },
+    {
+      "path": "/b/8b0b5899ed/io_worker.js",
+      "manifest_bytes": 41287,
+      "fixed_bytes": 42780
+    }
+  ],
   "uncovered_data_files": [],
   "source_size_discrepancies": [
     {
@@ -25,8 +47,9 @@
       "last_modified": "Sun, 27 Sep 2026 06:02:26 GMT"
     }
   ],
-  "sample_sha256_passed": 9,
+  "sample_sha256_passed": 6,
   "wasm_signature": "passed",
+  "wasm_backup_match": "passed",
   "http_tests": [
     "isolation headers",
     "index bytes",
@@ -34,6 +57,6 @@
     "plain batch",
     "gzip batch"
   ],
-  "hash_scope": "All downloaded files hashed during transfer; selected small files rehashed afterward.",
+  "hash_scope": "All downloaded files hashed during transfer; selected small files rehashed afterward; the four fix files are verified to differ from the scrape manifest (fix applied) and the wasm backup to match it.",
   "browser_game_execution": "not tested"
 }

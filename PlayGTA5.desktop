@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Play GTA5 (Local)
+GenericName=GTA5 Web Client
+Comment=Launch the archived playgta5.com web client in your browser
+Exec=/home/mint/Desktop/playgta5-fixes/Launch-Local.sh
+Path=/home/mint/Desktop/playgta5-fixes
+Icon=/home/mint/Desktop/playgta5-fixes/playgta5-icon.png
+Terminal=true
+Categories=Game;ActionGame;
+Keywords=GTA;GTA5;playgta5;game;rockstar;
+StartupNotify=false
