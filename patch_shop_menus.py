@@ -35,7 +35,13 @@ HAS_MOVIE_LOADED = (50789, 0x1dc92c4)        # graphics_commands::CommandHasScal
 HAS_MOVIE_LOADED_NATIVE = (51266, 0x1dd6879) # scrWrapped_HAS_SCALEFORM_MOVIE_LOADED::Call (inlines the command)
 STATS_UPDATE = (77092, 0x2647586)            # CStatsMgr::Update, once per game frame
 GROW_HEAP = (3036, 0x264d27)                 # rage::sysMemGrowBuddyAllocator::GrowHeap
-GROW_HEAP_LIMIT = 4                          # heaps of 256 MB: resource virtual stops at 1024 MB
+GROW_HEAP_LIMIT = 6                          # heaps of 256 MB: resource virtual stops at 1536 MB
+# Each has an inlined CMovieMgr::CMovie::WaitTillLoaded: unless flags97 & 1, sleep until bwMovie byte 171 (loaded) is set.
+# Only the AsyncBink thread sets it, and the wasm build never starts that thread (no Bink), so the main thread sleeps
+# forever once a TV movie is deleted (Michael's TV in Armenian 3). 'and' -> 'or' makes the skip test always true.
+MOVIE_WAITS = ((80969, 0x29996d6), (80987, 0x29a3c98), (81493, 0x29fbf85), (81494, 0x29fc348), (81507, 0x29fd2b2),
+               (36164, 0x14905f6), (36283, 0x14af1e9))  # CMovieMgr: UpdateFrame, Delete, CMovie::Play, Stop, GetTime; CPauseMenu: Open, SetupCodeForUnPause
+MOVIE_WAIT_TEST = bytes.fromhex('2d0061' '4101' '71' '45' '0440' '4285f004')  # load8_u 97; i32.const 1; and; eqz; if; i64.const 79877
 
 # Cash hotkey. index.html sets CASH_KEY_FLAG once per press; CStatsMgr::Update consumes it.
 CASH_KEY_FLAG = 6583436 + 0xE8   # in the engine's 256-byte keyboard block (wasm_input_test_key); VK 0xE8 is unassigned
@@ -195,6 +201,12 @@ def patch(data):
     grow = body(GROW_HEAP); at = locals_end(grow)
     check(grow[at:at + 13] == bytes.fromhex('024020002802fc032210411f4d'), 'GrowHeap entry')
     grow[at + 11] = GROW_HEAP_LIMIT - 1
+
+    for fn in MOVIE_WAITS:
+        check(starts.get(fn[1], -1) + first_index == fn[0], f'func[{fn[0]}] offset')
+        movie = body(fn); at = movie.find(MOVIE_WAIT_TEST)
+        check(at >= 0 and movie.count(MOVIE_WAIT_TEST) == 1, f'func[{fn[0]}] WaitTillLoaded test')
+        movie[at + 5] = 0x72  # i32.or
 
     payload = enc_leb(count) + b''.join(enc_leb(len(b)) + b for b in bodies)
     section = bytes([10]) + enc_leb(len(payload)) + payload
